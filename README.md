@@ -20,3 +20,6 @@ Kind of. There are some limitations :
 There are two easy things you can do :
 1) Change the cryptography
 2) Check for the packet identifier (the first "word" coming from clients). Indeed, this software does not have access to the in-game memory, it means that if the client sends a packet to your server with this software, you will receive twice the same packet ID. Check for it.
+
+# Note :
+For now, sending/receiving isn't supported. What is missing is the crafting of a TCP packet header.
