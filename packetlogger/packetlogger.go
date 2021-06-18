@@ -15,6 +15,7 @@ import (
 
 type PacketLogger struct {
 	// Logic
+	tcpHBuilder     TcpHeaderBuilder
 	interfaces      []pcap.Interface
 	chosenInterface pcap.Interface
 	pcapHandle      *pcap.Handle
@@ -81,6 +82,7 @@ func (pl *PacketLogger) Init() {
 			if pl.interfaces[i].Description == id[0] && pl.interfaces[i].Name == id[1][:len(id[1])-1] {
 				pl.chosenInterface = pl.interfaces[i]
 				pl.pcapHandle, _ = pcap.OpenLive(pl.interfaces[i].Name, 8192, true, pcap.BlockForever) // Max NT packet length * 2
+				pl.pcapHandle.SetDirection(pcap.DirectionInOut)
 				pl.resetLogger()
 				break
 			}
@@ -94,8 +96,38 @@ func (pl *PacketLogger) Init() {
 		pl.isWorld = chbWorld.Checked()
 	})
 
+	topRight := winc.NewPanel(pl.mainWindow)
+	topRight.SetSize(200, 50)
+
+	teSendPacketAsRcvd := winc.NewMultiEdit(topRight)
+	teSendPacketAsRcvd.SetSize(200, 50)
+
+	btSendPacketAsRcvd := winc.NewPushButton(topRight)
+	btSendPacketAsRcvd.SetText("Send as Rcvd")
+	btSendPacketAsRcvd.SetPos(0, 50)
+	btSendPacketAsRcvd.SetSize(100, 20)
+	btSendPacketAsRcvd.OnClick().Bind(func(e *winc.Event) {
+		pl.SendPacket(teSendPacketAsRcvd.Text(), false)
+	})
+
+	botRight := winc.NewPanel(pl.mainWindow)
+	botRight.SetSize(200, 50)
+
+	teSendPacketAsSent := winc.NewMultiEdit(botRight)
+	teSendPacketAsSent.SetSize(200, 50)
+
+	btSendPacketAsSent := winc.NewPushButton(botRight)
+	btSendPacketAsSent.SetText("Send as Sent")
+	btSendPacketAsSent.SetPos(0, 50)
+	btSendPacketAsSent.SetSize(100, 20)
+	btSendPacketAsSent.OnClick().Bind(func(e *winc.Event) {
+		pl.SendPacket(teSendPacketAsSent.Text(), true)
+	})
+
 	pl.teRcvdPacket = winc.NewMultiEdit(pl.mainWindow)
 	dock.Dock(top, winc.Top)
+	dock.Dock(topRight, winc.Right)
+	dock.Dock(botRight, winc.Right)
 	dock.Dock(pl.teRcvdPacket, winc.Fill)
 
 	pl.interfaces, _ = pcap.FindAllDevs()
@@ -118,6 +150,7 @@ func (pl *PacketLogger) Run() {
 			}
 
 			for packet := range packetSource.Packets() {
+				// TODO: Treat packet, even if it's not an in-game packet (needed to send/receive packet)
 				tcpLayer := packet.Layer(layers.LayerTypeTCP)
 				if tcpLayer == nil {
 					continue
@@ -129,10 +162,10 @@ func (pl *PacketLogger) Run() {
 
 				var packetStr string
 				if !isIpInInterface(pl.chosenInterface, packet.NetworkLayer().NetworkFlow().Src().String()) {
+					pl.tcpHBuilder.ParseReceivedPacket(packet)
 					if !pl.isWorld {
 						packetStr = string(cryptography.LoginDecryptServerPacket(applicationLayer.Payload()))
 						pl.teRcvdPacket.SetText(pl.teRcvdPacket.Text() + "Rcvd: " + packetStr + "\r\n")
-						fmt.Println("Rcvd: ", packetStr)
 					} else {
 						pl.rcvdBuffer = append(pl.rcvdBuffer, applicationLayer.Payload()...)
 						for len(pl.rcvdBuffer) > 0 {
@@ -141,14 +174,13 @@ func (pl *PacketLogger) Run() {
 								break
 							}
 							pl.teRcvdPacket.SetText(pl.teRcvdPacket.Text() + "Rcvd: " + packetStr + "\r\n")
-							fmt.Println("Rcvd: ", packetStr)
 						}
 					}
 				} else {
+					pl.tcpHBuilder.ParseSentPacket(packet)
 					if !pl.isWorld {
 						packetStr = string(cryptography.LoginDecryptClientPacket(applicationLayer.Payload()))
 						pl.teRcvdPacket.SetText(pl.teRcvdPacket.Text() + "Sent: " + packetStr + "\r\n")
-						fmt.Println("Sent: ", packetStr)
 					} else {
 						pl.sentBuffer = append(pl.sentBuffer, applicationLayer.Payload()...)
 
@@ -159,7 +191,6 @@ func (pl *PacketLogger) Run() {
 								break
 							}
 							pl.teRcvdPacket.SetText(pl.teRcvdPacket.Text() + "Sent: " + packetStr + "\r\n")
-							fmt.Println("Sent: ", packetStr)
 							split := strings.Split(packetStr, " ")
 
 							if len(split) < 2 {
@@ -173,11 +204,9 @@ func (pl *PacketLogger) Run() {
 							}
 
 							if pl.key == -1 && len(split) == 2 {
-								fmt.Println("OK")
 								pl.key, err = strconv.Atoi(split[1])
 								if err != nil {
 									pl.key = -1 // because it is 0 if err != nil
-									fmt.Println("Failed retrieving encryptionKey, retry on next packet")
 								}
 							}
 						}
@@ -205,4 +234,31 @@ func isIpInInterface(networkInterface pcap.Interface, ip string) bool {
 		}
 	}
 	return false
+}
+
+func (pl *PacketLogger) SendPacket(packet string, asSent bool) {
+	data := []byte{}
+
+	if pl.isWorld {
+		if asSent { // ex: walk
+			pidBytes := []byte(strconv.Itoa(pl.pid + 1))
+			data = cryptography.WorldEncrypt([]byte(packet), pidBytes, pl.key, pl.key == -1)
+		} else { // ex: mv
+
+		}
+	} else {
+		if asSent { // ex: NoS0577
+
+		} else { // ex: NsTeST
+
+		}
+	}
+
+	if len(data) >= 1 {
+		data := pl.tcpHBuilder.FormatPacket(data, true)
+		if len(data) > 0 {
+			err := pl.pcapHandle.WritePacketData(data)
+			fmt.Println(err)
+		}
+	}
 }

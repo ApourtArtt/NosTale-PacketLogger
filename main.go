@@ -5,6 +5,7 @@ import (
 )
 
 func main() {
+
 	packetlogger := pl.PacketLogger{}
 	packetlogger.Init()
 	packetlogger.Run()
