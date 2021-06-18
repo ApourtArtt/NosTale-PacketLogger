@@ -15,6 +15,7 @@ But I __guess__ it's abandonned, since it's something doable in a really short t
 Kind of. There are some limitations :
 - You need to have the port you want to sniff in.
 - You need the encryption key to decode world client to server packet (-> it requires to select the channel with the world port set, and the world checkbox checked)
+- You can only send a single packet, since the [ACK and SEQ](https://datatracker.ietf.org/doc/html/rfc793#page-15) will then be unsynchronized.
 
 # How can I avoid players using it on my server ?
 There are two easy things you can do :
